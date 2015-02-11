@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<!-- python -m SimpleHTTPServer 8888 & -->
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>D3 Test</title>
+        <script src="http://d3js.org/d3.v3.js" charset="utf-8"></script>
+        <script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
+    </head>
+    
+    <style>
+
+        .bar {
+          fill: steelblue;
+        }
+
+        .bar:hover {
+          fill: brown;
+        }
+
+        .axis {
+          font: 10px sans-serif;
+        }
+
+        .axis path,
+        .axis line {
+          fill: none;
+          stroke: #000;
+          shape-rendering: crispEdges;
+        }
+
+        .x.axis path {
+          display: none;
+        }
+
+        .d3-tip {
+          line-height: 1;
+          font-weight: bold;
+          padding: 12px;
+          background: rgba(0, 0, 0, 0.8);
+          color: #fff;
+          border-radius: 2px;
+        }
+
+        /* Creates a small triangle extender for the tooltip */
+        .d3-tip:after {
+          box-sizing: border-box;
+          display: inline;
+          font-size: 10px;
+          width: 100%;
+          line-height: 1;
+          color: rgba(0, 0, 0, 0.8);
+          content: "\25BC";
+          position: absolute;
+          text-align: center;
+        }
+
+    </style>
+
+    <body>
+        <script type="text/javascript">
+
+        // create a context for the purpose of namespacing and applying strict syntax
+        (function () { 'use strict';
+
+            var N = 60; // number of bins in each histogram
+
+            function emptyDistribution() {
+                var ret = new Array(N);
+                for (var i = 0; i < N; i++) {
+                    ret[i] = 0;
+                }
+                return ret;
+            }
+
+            function constantDistribution (width) {
+                var ret = emptyDistribution();
+                for (var i = 0; i < width; i++) {
+                    ret[i] = 1/width;
+                }
+                return ret;
+            }
+
+            function cumulative (densities) {
+                var ret = new Array(N);
+                var accumulated = 0;
+                for (var i = 0; i < N; i++) {
+                    // definition of discrete cumulative probability is P(X<=x)
+                    // so add before setting. But this will either over or 
+                    // underestimate (combining discrete & continuous problem)
+                    accumulated += densities[i];
+                    ret[i] = accumulated;
+                }
+                return ret;
+            }
+            
+            function complement (distribution) {
+                var ret = new Array(N);
+                for (var i = 0; i < N; i++) {
+                    ret[i] = 1 - distribution[i];
+                }
+                return ret;
+            }
+            
+            function either (p1, p2) {
+                var ret = new Array(N);
+                for (var i = 0; i < N; i++) {
+                    ret[i] = (p1[i] + p2[i]) - (p1[i] * p2[i]);
+                }
+                return ret;
+            }
+
+            function product (p1, p2) {
+                var ret = new Array(N);
+                for (var i = 0; i < N; i++) {
+                    ret[i] = p1[i] * p2[i];
+                }
+                return ret;
+            }
+            
+            function add (p1, p2) {
+                var ret = new Array(N);
+                for (var i = 0; i < N; i++) ret[i] = p1[i] + p2[i];
+                return ret;
+            }
+
+            function subtract (p1, p2) {
+                var ret = new Array(N);
+                for (var i = 0; i < N; i++) ret[i] = p1[i] - p2[i];
+                return ret;
+            }
+
+            /* Add a new SVG graph to the DOM displaying the given data. */
+            function makeGraph (data) {
+
+                var margin = {top: 20, right: 20, bottom: 30, left: 40},
+                    width = 600 - margin.left - margin.right,
+                    height = 150 - margin.top - margin.bottom;
+
+                // Map graph values to SVG (x,y) coordinates and colors
+                var x = d3.scale.ordinal()
+                    .domain(d3.range(N))
+                    .rangeRoundBands([0, width]);
+                
+                var y = d3.scale.linear()
+                    .domain([0,1])
+                    .range([height, 0]);
+                //var c = d3.scale.category10.domain(d3.range(3));
+                
+                // Create a new SVG element in the DOM, which will hold the graph
+                var svg = d3.select("body").append("svg")
+                    .attr("width", width + margin.left + margin.right)
+                    .attr("height", height + margin.top + margin.bottom)
+                    .append("g") // group element
+                    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+                // Create X axis and add it to a group within the SVG
+
+                var xAxis = d3.svg.axis()
+                    .scale(x)
+                    .orient("bottom");
+
+                svg.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(xAxis)
+                    .selectAll("text")
+                    .style("text-anchor", "end")
+                    .attr("dx", "-.8em")
+                    .attr("dy", "-.55em")
+                    .attr("transform", "rotate(-90)" );
+                                
+                // Create Y axis and add it to a group within the SVG
+
+                var yAxis = d3.svg.axis()
+                    .scale(y)
+                    .orient("left")
+                    .ticks(2);
+                    
+                svg.append("g")
+                    .attr("class", "y axis")
+                    .call(yAxis)
+                    .append("text")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", 6)
+                    .attr("dy", ".71em")
+                    .style("text-anchor", "end");
+
+                // Popup "tooltip" to show the value of any given bar
+                var tip = d3.tip()
+                    .attr('class', 'd3-tip')
+                    .offset([-10, 0])
+                    .html(function(d, i) { return 't=' + i + ' p=' + d.toFixed(3); });
+                // What does this do?
+                svg.call(tip);
+
+                // Bind the data, creating or updating one bar for each data point in the array
+                    
+                svg.selectAll(".bar")
+                    .data(data)
+                    .enter().append("rect")
+                    .attr("class", "bar")
+                    .attr("x", function(d, i) { return x(i); })
+                    .attr("width", x.rangeBand())
+                    .attr("y", function(d, i) { return y(d); })
+                    .attr("height", function(d) { return height - y(d); })
+                    .on('mouseover', tip.show)
+                    .on('mouseout', tip.hide);
+            }
+
+            var busA = constantDistribution(30);
+            var busB = constantDistribution(40);
+            var busC = constantDistribution(50);
+            var cBusA = cumulative(busA);
+            var cBusB = cumulative(busB);
+            var cBusC = cumulative(busC);
+
+            // P(A or B or C) = P((A or B) or C)
+            // P(A or B) = P(A) + P(B) - (P(A) * P(B)) 
+            var anyBusArrived = either(either(cBusA, cBusB), cBusC);
+            var noBusArrived = complement(anyBusArrived);
+
+            // Leave out the bus being examined from the cumulative part
+            //   cumulative versus density, any way to re-express this?
+            var boardedA = product(busA, complement(either(cBusB, cBusC)));
+            var boardedB = product(busB, complement(either(cBusA, cBusC)));
+            var boardedC = product(busC, complement(either(cBusA, cBusB)));
+
+            var cBoardedA = cumulative (boardedA);
+            var cBoardedB = cumulative (boardedB);
+            var cBoardedC = cumulative (boardedC);
+
+            var cBoardedAny = add(add(cBoardedA, cBoardedB), cBoardedC);
+
+            // Warning, cumulative(either()) != either(cumulative())
+            // we want prob that (A already happened) OR (B already happened)
+            // not prob that (A OR B) already happened... but what does this mean?
+            makeGraph (anyBusArrived);
+            makeGraph (noBusArrived);
+
+            makeGraph (cBusA);
+            makeGraph (cBoardedA);
+            makeGraph (cBusB);
+            makeGraph (cBoardedB);
+            makeGraph (cBusC);
+            makeGraph (cBoardedC);
+
+            makeGraph (cBoardedAny);
+
+        }()); // close namespace and call to execute.
+            
+        </script>
+    </body>
+</html>     
+
