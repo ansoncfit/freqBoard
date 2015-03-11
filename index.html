@@ -7,7 +7,7 @@
         <script src="http://d3js.org/d3.v3.js" charset="utf-8"></script>
         <script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
     </head>
-    
+
     <style>
 
         .bar {
@@ -55,6 +55,11 @@
           text-align: center;
         }
 
+        svg text {
+          font-size: 10pt;
+          font-family: sans;
+        }
+
     </style>
 
     <body>
@@ -86,14 +91,14 @@
                 var accumulated = 0;
                 for (var i = 0; i < N; i++) {
                     // definition of discrete cumulative probability is P(X<=x)
-                    // so add before setting. But this will either over or 
+                    // so add before setting. But this will either over or
                     // underestimate (combining discrete & continuous problem)
                     accumulated += densities[i];
                     ret[i] = accumulated;
                 }
                 return ret;
             }
-            
+
             function complement (distribution) {
                 var ret = new Array(N);
                 for (var i = 0; i < N; i++) {
@@ -101,7 +106,7 @@
                 }
                 return ret;
             }
-            
+
             function either (p1, p2) {
                 var ret = new Array(N);
                 for (var i = 0; i < N; i++) {
@@ -117,7 +122,7 @@
                 }
                 return ret;
             }
-            
+
             function add (p1, p2) {
                 var ret = new Array(N);
                 for (var i = 0; i < N; i++) ret[i] = p1[i] + p2[i];
@@ -131,7 +136,7 @@
             }
 
             /* Add a new SVG graph to the DOM displaying the given data. */
-            function makeGraph (data) {
+            function makeGraph (data, label) {
 
                 var margin = {top: 20, right: 20, bottom: 30, left: 40},
                     width = 600 - margin.left - margin.right,
@@ -141,18 +146,22 @@
                 var x = d3.scale.ordinal()
                     .domain(d3.range(N))
                     .rangeRoundBands([0, width]);
-                
+
                 var y = d3.scale.linear()
                     .domain([0,1])
                     .range([height, 0]);
                 //var c = d3.scale.category10.domain(d3.range(3));
-                
+
                 // Create a new SVG element in the DOM, which will hold the graph
                 var svg = d3.select("body").append("svg")
                     .attr("width", width + margin.left + margin.right)
                     .attr("height", height + margin.top + margin.bottom)
                     .append("g") // group element
                     .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+
+                // add label
+                svg.append('text').text(label).attr('transform', 'translate(30, 10)');
 
                 // Create X axis and add it to a group within the SVG
 
@@ -169,14 +178,14 @@
                     .attr("dx", "-.8em")
                     .attr("dy", "-.55em")
                     .attr("transform", "rotate(-90)" );
-                                
+
                 // Create Y axis and add it to a group within the SVG
 
                 var yAxis = d3.svg.axis()
                     .scale(y)
                     .orient("left")
                     .ticks(2);
-                    
+
                 svg.append("g")
                     .attr("class", "y axis")
                     .call(yAxis)
@@ -195,7 +204,7 @@
                 svg.call(tip);
 
                 // Bind the data, creating or updating one bar for each data point in the array
-                    
+
                 svg.selectAll(".bar")
                     .data(data)
                     .enter().append("rect")
@@ -216,7 +225,7 @@
             var cBusC = cumulative(busC);
 
             // P(A or B or C) = P((A or B) or C)
-            // P(A or B) = P(A) + P(B) - (P(A) * P(B)) 
+            // P(A or B) = P(A) + P(B) - (P(A) * P(B))
             var anyBusArrived = either(either(cBusA, cBusB), cBusC);
             var noBusArrived = complement(anyBusArrived);
 
@@ -235,21 +244,20 @@
             // Warning, cumulative(either()) != either(cumulative())
             // we want prob that (A already happened) OR (B already happened)
             // not prob that (A OR B) already happened... but what does this mean?
-            makeGraph (anyBusArrived);
-            makeGraph (noBusArrived);
+            makeGraph (anyBusArrived, 'Any bus arrived');
+            makeGraph (noBusArrived, 'No bus arrived');
 
-            makeGraph (cBusA);
-            makeGraph (cBoardedA);
-            makeGraph (cBusB);
-            makeGraph (cBoardedB);
-            makeGraph (cBusC);
-            makeGraph (cBoardedC);
+            makeGraph (cBusA, 'Bus A arrived');
+            makeGraph (cBoardedA, 'Boarded bus A');
+            makeGraph (cBusB, 'Bus B arrived');
+            makeGraph (cBoardedB, 'Boarded bus B');
+            makeGraph (cBusC, 'Bus C arrived');
+            makeGraph (cBoardedC, 'Boarded bus C');
 
-            makeGraph (cBoardedAny);
+            makeGraph (cBoardedAny, 'Boarded any bus');
 
         }()); // close namespace and call to execute.
-            
+
         </script>
     </body>
-</html>     
-
+</html>
