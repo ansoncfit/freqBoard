@@ -158,6 +158,33 @@
         return ret;
       }
 
+      function trimRight (array) {
+        var i = array.length - 1
+        for (; i > 0; i--) {
+          if (Math.abs(array[i]) > 1e-10)
+            break;
+        }
+
+        return array.slice(0, i + 1);
+      }
+
+      /** make an elpased time distribution */
+      function elapsed(boardedA, ttimeA, boardedB, ttimeB, boardedC, ttimeC) {
+        var elapsedTime = [];
+
+        for (var i = 0; i < N + Math.max(ttimeA, ttimeB, ttimeC); i++) {
+          elapsedTime[i] = 0;
+        }
+
+        for (var i = 0; i < N; i++) {
+          elapsedTime[i + ttimeA] += boardedA[i];
+          elapsedTime[i + ttimeB] += boardedB[i];
+          elapsedTime[i + ttimeC] += boardedC[i];
+        }
+
+        return trimRight(elapsedTime);
+      }
+
       /* the probability that a route B with headway headway and a travel time ttimeB is better than a route with a
          travel time ttimeA after waiting minutes minutes, given that route A is at the stop now */
       function pBetter(headway, ttimeB, ttimeA, minutes, cBoardB) {
@@ -207,7 +234,7 @@
       }
 
       /* Add a new SVG graph to the DOM displaying the given data. */
-      function makeGraph(data, label) {
+      function makeGraph(data, label, max) {
 
         var margin = {
             top: 20,
@@ -220,11 +247,11 @@
 
         // Map graph values to SVG (x,y) coordinates and colors
         var x = d3.scale.ordinal()
-          .domain(d3.range(N))
+          .domain(d3.range(data.length))
           .rangeRoundBands([0, width]);
 
         var y = d3.scale.linear()
-          .domain([0, 1])
+          .domain([0, max !== undefined ? max : Math.max.apply(null, data)])
           .range([height, 0]);
         //var c = d3.scale.category10.domain(d3.range(3));
 
@@ -303,12 +330,12 @@
       function drawGraphs() {
         d3.selectAll('svg').remove();
 
-        var headwayA = document.getElementById('headwayA').value;
-        var ttimeA = document.getElementById('ttimeA').value;
-        var headwayB = document.getElementById('headwayB').value;
-        var ttimeB = document.getElementById('ttimeB').value;
-        var headwayC = document.getElementById('headwayC').value;
-        var ttimeC = document.getElementById('ttimeC').value;
+        var headwayA = parseInt(document.getElementById('headwayA').value);
+        var ttimeA = parseInt(document.getElementById('ttimeA').value);
+        var headwayB = parseInt(document.getElementById('headwayB').value);
+        var ttimeB = parseInt(document.getElementById('ttimeB').value);
+        var headwayC = parseInt(document.getElementById('headwayC').value);
+        var ttimeC = parseInt(document.getElementById('ttimeC').value);
 
         var busA = constantDistribution(headwayA);
         var busB = constantDistribution(headwayB);
@@ -337,17 +364,22 @@
         // Warning, cumulative(either()) != either(cumulative())
         // we want prob that (A already happened) OR (B already happened)
         // not prob that (A OR B) already happened... but what does this mean?
-        makeGraph(anyBusArrived, 'Any bus arrived');
-        makeGraph(noBusArrived, 'No bus arrived');
+        makeGraph(anyBusArrived, 'Any bus arrived', 1);
+        makeGraph(noBusArrived, 'No bus arrived', 1);
 
-        makeGraph(cBusA, 'Bus A arrived');
-        makeGraph(cBoardedA, 'Boarded bus A');
-        makeGraph(cBusB, 'Bus B arrived');
-        makeGraph(cBoardedB, 'Boarded bus B');
-        makeGraph(cBusC, 'Bus C arrived');
-        makeGraph(cBoardedC, 'Boarded bus C');
+        makeGraph(cBusA, 'Bus A arrived', 1);
+        makeGraph(cBoardedA, 'Boarded bus A', 1);
+        makeGraph(cBusB, 'Bus B arrived', 1);
+        makeGraph(cBoardedB, 'Boarded bus B', 1);
+        makeGraph(cBusC, 'Bus C arrived', 1);
+        makeGraph(cBoardedC, 'Boarded bus C', 1);
 
-        makeGraph(cBoardedAny, 'Boarded any bus');
+        makeGraph(cBoardedAny, 'Boarded any bus', 1);
+
+        // compute the elapsed time distribution
+        var elapsedTime = elapsed(boardedA, ttimeA, boardedB, ttimeB, boardedC, ttimeC);
+
+        makeGraph(elapsedTime, 'Elapsed time distribution');
 
         // now the case of the clever traveler
 
@@ -404,11 +436,17 @@
 
         var cCvrBoardedAny = add(add(cCvrBoardedA, cCvrBoardedB), cCvrBoardedC);
 
-        makeGraph(cCvrBoardedA, "Clever passenger with perfect information boarded bus A");
-        makeGraph(cCvrBoardedB, "Clever passenger with perfect information boarded bus B");
-        makeGraph(cCvrBoardedC, "Clever passenger with perfect information boarded bus C");
+        makeGraph(cCvrBoardedA, "Clever passenger with perfect information boarded bus A", 1);
+        makeGraph(cCvrBoardedB, "Clever passenger with perfect information boarded bus B", 1);
+        makeGraph(cCvrBoardedC, "Clever passenger with perfect information boarded bus C", 1);
 
-        makeGraph(cCvrBoardedAny, "Clever passenger with perfect information boarded any bus");
+        makeGraph(cCvrBoardedAny, "Clever passenger with perfect information boarded any bus", 1);
+
+        // compute the elapsed time distribution
+        var cvrElapsedTime = elapsed(cvrBoardedA, ttimeA, cvrBoardedB, ttimeB, cvrBoardedC, ttimeC);
+
+        makeGraph(cvrElapsedTime, 'Elapsed time distribution for the clever traveler with perfect information');
+
       }
 
       d3.selectAll('.control').on('change', drawGraphs);
