@@ -106,9 +106,9 @@
       }
 
       function cumulative(densities) {
-        var ret = new Array(N);
+        var ret = new Array(densities.length);
         var accumulated = 0;
-        for (var i = 0; i < N; i++) {
+        for (var i = 0; i < densities.length; i++) {
           // definition of discrete cumulative probability is P(X<=x)
           // so add before setting. But this will either over or
           // underestimate (combining discrete & continuous problem)
@@ -166,6 +166,17 @@
         }
 
         return array.slice(0, i + 1);
+      }
+
+      /** offset an array by a fixed amount (e.g. a travel time) */
+      function offset (array, distance) {
+        var left = [];
+
+        for (var i = 0; i < distance; i++) {
+          left[i] = 0;
+        }
+
+        return left.concat(array);
       }
 
       /** make an elpased time distribution */
@@ -447,6 +458,36 @@
 
         makeGraph(cvrElapsedTime, 'Elapsed time distribution for the clever traveler with perfect information');
 
+        // the simple case of the clever traveler
+        var destA = offset(busA, ttimeA);
+        var destB = offset(busB, ttimeB);
+        var destC = offset(busC, ttimeC);
+
+        var cDestA = cumulative(destA);
+        var cDestB = cumulative(destB);
+        var cDestC = cumulative(destC);
+
+        var tookA = product(destA, complement(either(cDestB, cDestC)));
+        var tookB = product(destB, complement(either(cDestC, cDestA)));
+        var tookC = product(destC, complement(either(cDestB, cDestA)));
+
+        var bDestA = tookA.slice(ttimeA);
+        var bDestB = tookB.slice(ttimeB);
+        var bDestC = tookC.slice(ttimeC);
+
+        var cbDestA = cumulative(bDestA);
+        var cbDestB = cumulative(bDestB);
+        var cbDestC = cumulative(bDestC);
+
+        makeGraph(cbDestA, "Clever passenger with perfect information boarded bus A, simple algorithm", 1);
+        makeGraph(cbDestB, "Clever passenger with perfect information boarded bus B, simple algorithm", 1);
+        makeGraph(cbDestC, "Clever passenger with perfect information boarded bus C, simple algorithm", 1);
+
+        var cbAny = add(add(cbDestA, cbDestB), cbDestC);
+        makeGraph(cbAny, "Clever passenger with perfect information boarded any bus, simple algorithm", 1);        
+
+        var destElapsed = elapsed(bDestA, ttimeA, bDestB, ttimeB, bDestC, ttimeC);
+        makeGraph(destElapsed, "Elapsed time distribution for the clever traveler with perfect information, simple algorithm")
       }
 
       d3.selectAll('.control').on('change', drawGraphs);
