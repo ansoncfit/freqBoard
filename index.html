@@ -107,10 +107,14 @@
                 return ret;
             }
 
+            function or (p1, p2) {
+              return p1 + p2 - p1 * p2;
+            }
+
             function either (p1, p2) {
                 var ret = new Array(N);
                 for (var i = 0; i < N; i++) {
-                    ret[i] = (p1[i] + p2[i]) - (p1[i] * p2[i]);
+                    ret[i] = or(p1[i], p2[i]);
                 }
                 return ret;
             }
@@ -133,6 +137,54 @@
                 var ret = new Array(N);
                 for (var i = 0; i < N; i++) ret[i] = p1[i] - p2[i];
                 return ret;
+            }
+
+            /* the probability that a route B with headway headway and a travel time ttimeB is better than a route with a
+               travel time ttimeA after waiting minutes minutes, given that route A is at the stop now */
+            function pBetter (headway, ttimeB, ttimeA, minutes, cBoardB) {
+              if (ttimeB >= ttimeA) {
+                // never better
+                return 0;
+              }
+
+              if (minutes >= headway)
+                return 0;
+
+              var pBComesSoonEnough = Math.min((ttimeA - ttimeB) / (headway - minutes), 1);
+
+              // the output of this function eventually gets multiplied with the probability that b has not
+              // been boarded, so we want P(B is better than A | B has not been boarded). But what we calculated
+              // above is P(B is better than A | B has not come), which is slightly larger. Discount it slightly,
+              // by P(B has not yet come | B has not yet been boarded), which is less than 1, because B might
+              // have come but was skipped.
+              // You can work out this factor with Bayes' theorem. The critical piece is that
+              // P(B has not yet been boarded | B has not yet come) = 1, because you can't board a bus that has not
+              // arrived . . .
+              var pBHasCome = minutes / headway;
+
+              if (cBoardB > pBHasCome)
+                alert("Higher probability of boarding vehicle than of vehicle coming; this is a bug");
+
+              // this cannot divide by zero, because cBoardB cannot be 1 until one minute *after* P(B has come) is 1,
+              // which is when x = headway + 1, so the above if will have returned 0;
+              var discount = (1 - pBHasCome) / (1 - cBoardB);
+
+              if (discount > 1 || discount < 0)
+                alert("Bad discount");
+
+              return pBComesSoonEnough * discount;
+            }
+
+            /** P(A arrives | A has not been boarded) = P(A arrives | A has not arrived) * P(A has not arrived | A has not been boarded) */
+            function pArr(headway, minutes, cBoard) {
+              if (minutes >= headway)
+                return 0;
+
+              var pArr = 1 / (headway - minutes);
+              var pHasCome = minutes / headway;
+              var discount = (1 - pHasCome) / (1 - cBoard);
+
+              return pArr * discount;
             }
 
             /* Add a new SVG graph to the DOM displaying the given data. */
@@ -217,9 +269,17 @@
                     .on('mouseout', tip.hide);
             }
 
-            var busA = constantDistribution(30);
-            var busB = constantDistribution(40);
-            var busC = constantDistribution(50);
+            // TODO: control with sliders, redraw graphs
+            var headwayA = 30;
+            var ttimeA = 30;
+            var headwayB = 40;
+            var ttimeB = 20;
+            var headwayC = 50;
+            var ttimeC = 25;
+
+            var busA = constantDistribution(headwayA);
+            var busB = constantDistribution(headwayB);
+            var busC = constantDistribution(headwayC);
             var cBusA = cumulative(busA);
             var cBusB = cumulative(busB);
             var cBusC = cumulative(busC);
@@ -256,6 +316,66 @@
 
             makeGraph (cBoardedAny, 'Boarded any bus');
 
+            // now the case of the clever traveler
+
+            var cvrBoardedA = [];
+            var cvrBoardedB = [];
+            var cvrBoardedC = [];
+
+            // cumulative probabilities that these routes have been boarded
+            var cPBrdA = 0;
+            var cPBrdB = 0;
+            var cPBrdC = 0;
+
+            for (var x = 0; x < N; x++) {
+              // probability A arrives at minute x
+              var pArrA = pArr(headwayA, x, cPBrdA);
+              var pArrB = pArr(headwayB, x, cPBrdB);
+              var pArrC = pArr(headwayC, x, cPBrdC);
+
+              // probability B is better than A
+              var pBBtrA = pBetter(headwayB, ttimeB, ttimeA, x, cPBrdB);
+              var pCBtrA = pBetter(headwayC, ttimeC, ttimeA, x, cPBrdC);
+
+              var pABtrB = pBetter(headwayA, ttimeA, ttimeB, x, cPBrdA);
+              var pCBtrB = pBetter(headwayC, ttimeC, ttimeB, x, cPBrdC);
+
+              var pABtrC = pBetter(headwayA, ttimeA, ttimeC, x, cPBrdA);
+              var pBBtrC = pBetter(headwayB, ttimeB, ttimeC, x, cPBrdB);
+
+              // only one direction of the comparison can have non-zero probability; let's be sure.
+              if (Math.min(pABtrB, pBBtrA) !== 0 ||
+                  Math.min(pABtrC, pCBtrA) !== 0 ||
+                  Math.min(pBBtrC, pCBtrB) !== 0)
+                  alert("Both directions of a comparison had non-zero probability. This is a bug.")
+
+              if (pBBtrA > 1 || pCBtrA > 1 || pABtrB > 1 || pCBtrB > 1 || pABtrC > 1 || pBBtrC > 1 ||
+                    pBBtrA < 0 || pCBtrA < 0 || pABtrB < 0 || pCBtrB < 0 || pABtrC < 0 || pBBtrC < 0)
+                alert("Impossible probability");
+
+              // both pBBtrA and pCBtrA depend on x, but they are independent conditional on X I believe, so I think this
+              // is the correct formula
+              // the cumulative probabilities are mutually exclusive, so adding them is the correct way to do an or
+              cvrBoardedA[x] = pArrA * (1 - or(pBBtrA, pCBtrA)) * (1 - (cPBrdA + cPBrdB + cPBrdC));
+              cvrBoardedB[x] = pArrB * (1 - or(pABtrB, pCBtrB)) * (1 - (cPBrdA + cPBrdB + cPBrdC));
+              cvrBoardedC[x] = pArrC * (1 - or(pABtrC, pBBtrC)) * (1 - (cPBrdA + cPBrdB + cPBrdC));
+
+              cPBrdA += cvrBoardedA[x];
+              cPBrdB += cvrBoardedB[x];
+              cPBrdC += cvrBoardedC[x];
+            }
+
+            var cCvrBoardedA = cumulative(cvrBoardedA);
+            var cCvrBoardedB = cumulative(cvrBoardedB);
+            var cCvrBoardedC = cumulative(cvrBoardedC);
+
+            var cCvrBoardedAny = add(add(cCvrBoardedA, cCvrBoardedB), cCvrBoardedC);
+
+            makeGraph(cCvrBoardedA, "Clever passenger with perfect information boarded bus A");
+            makeGraph(cCvrBoardedB, "Clever passenger with perfect information boarded bus B");
+            makeGraph(cCvrBoardedC, "Clever passenger with perfect information boarded bus C");
+
+            makeGraph(cCvrBoardedAny, "Clever passenger with perfect information boarded any bus");
         }()); // close namespace and call to execute.
 
         </script>
