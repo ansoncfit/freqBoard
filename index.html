@@ -1,414 +1,422 @@
 <!DOCTYPE html>
 <!-- python -m SimpleHTTPServer 8888 & -->
 <html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <title>D3 Test</title>
-        <script src="http://d3js.org/d3.v3.js" charset="utf-8"></script>
-        <script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
-    </head>
 
-    <style>
+<head>
+  <meta charset="utf-8">
+  <title>D3 Test</title>
+  <script src="http://d3js.org/d3.v3.js" charset="utf-8"></script>
+  <script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
+</head>
 
-        .bar {
-          fill: steelblue;
+<style>
+  .bar {
+    fill: steelblue;
+  }
+  .bar:hover {
+    fill: brown;
+  }
+  .axis {
+    font: 10px sans-serif;
+  }
+  .axis path,
+  .axis line {
+    fill: none;
+    stroke: #000;
+    shape-rendering: crispEdges;
+  }
+  .x.axis path {
+    display: none;
+  }
+  .d3-tip {
+    line-height: 1;
+    font-weight: bold;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border-radius: 2px;
+  }
+  /* Creates a small triangle extender for the tooltip */
+
+  .d3-tip:after {
+    box-sizing: border-box;
+    display: inline;
+    font-size: 10px;
+    width: 100%;
+    line-height: 1;
+    color: rgba(0, 0, 0, 0.8);
+    content: "\25BC";
+    position: absolute;
+    text-align: center;
+  }
+  svg text,
+  body {
+    font-size: 10pt;
+    font-family: sans;
+  }
+
+</style>
+
+<body>
+  <div>
+    <label for="headwayA">Headway of bus A</label>
+    <input type="range" id="headwayA" min="1" max="60" value="30" class="control" />
+
+    <label for="ttimeA">Travel time of bus A</label>
+    <input type="range" id="ttimeA" min="1" max="60" value="30" class="control" />
+  </div>
+
+  <div>
+    <label for="headwayB">Headway of bus B</label>
+    <input type="range" id="headwayB" min="1" max="60" value="40" class="control" />
+
+    <label for="ttimeB">Travel time of bus B</label>
+    <input type="range" id="ttimeB" min="1" max="60" value="20" class="control" />
+  </div>
+
+  <div>
+    <label for="headwayC">Headway of bus C</label>
+    <input type="range" id="headwayC" min="1" max="60" value="50" class="control" />
+
+    <label for="ttimeC">Travel time of bus C</label>
+    <input type="range" id="ttimeC" min="1" max="60" value="25" class="control" />
+  </div>
+
+  <script type="text/javascript">
+    // create a context for the purpose of namespacing and applying strict syntax
+    (function() {
+      'use strict';
+
+      var N = 60; // number of bins in each histogram
+
+      function emptyDistribution() {
+        var ret = new Array(N);
+        for (var i = 0; i < N; i++) {
+          ret[i] = 0;
+        }
+        return ret;
+      }
+
+      function constantDistribution(width) {
+        var ret = emptyDistribution();
+        for (var i = 0; i < width; i++) {
+          ret[i] = 1 / width;
+        }
+        return ret;
+      }
+
+      function cumulative(densities) {
+        var ret = new Array(N);
+        var accumulated = 0;
+        for (var i = 0; i < N; i++) {
+          // definition of discrete cumulative probability is P(X<=x)
+          // so add before setting. But this will either over or
+          // underestimate (combining discrete & continuous problem)
+          accumulated += densities[i];
+          ret[i] = accumulated;
+        }
+        return ret;
+      }
+
+      function complement(distribution) {
+        var ret = new Array(N);
+        for (var i = 0; i < N; i++) {
+          ret[i] = 1 - distribution[i];
+        }
+        return ret;
+      }
+
+      function or(p1, p2) {
+        return p1 + p2 - p1 * p2;
+      }
+
+      function either(p1, p2) {
+        var ret = new Array(N);
+        for (var i = 0; i < N; i++) {
+          ret[i] = or(p1[i], p2[i]);
+        }
+        return ret;
+      }
+
+      function product(p1, p2) {
+        var ret = new Array(N);
+        for (var i = 0; i < N; i++) {
+          ret[i] = p1[i] * p2[i];
+        }
+        return ret;
+      }
+
+      function add(p1, p2) {
+        var ret = new Array(N);
+        for (var i = 0; i < N; i++) ret[i] = p1[i] + p2[i];
+        return ret;
+      }
+
+      function subtract(p1, p2) {
+        var ret = new Array(N);
+        for (var i = 0; i < N; i++) ret[i] = p1[i] - p2[i];
+        return ret;
+      }
+
+      /* the probability that a route B with headway headway and a travel time ttimeB is better than a route with a
+         travel time ttimeA after waiting minutes minutes, given that route A is at the stop now */
+      function pBetter(headway, ttimeB, ttimeA, minutes, cBoardB) {
+        if (ttimeB >= ttimeA) {
+          // never better
+          return 0;
         }
 
-        .bar:hover {
-          fill: brown;
+        if (minutes >= headway)
+          return 0;
+
+        var pBComesSoonEnough = Math.min((ttimeA - ttimeB) / (headway - minutes), 1);
+
+        // the output of this function eventually gets multiplied with the probability that b has not
+        // been boarded, so we want P(B is better than A | B has not been boarded). But what we calculated
+        // above is P(B is better than A | B has not come), which is slightly larger. Discount it slightly,
+        // by P(B has not yet come | B has not yet been boarded), which is less than 1, because B might
+        // have come but was skipped.
+        // You can work out this factor with Bayes' theorem. The critical piece is that
+        // P(B has not yet been boarded | B has not yet come) = 1, because you can't board a bus that has not
+        // arrived . . .
+        var pBHasCome = minutes / headway;
+
+        if (cBoardB > pBHasCome)
+          alert("Higher probability of boarding vehicle than of vehicle coming; this is a bug");
+
+        // this cannot divide by zero, because cBoardB cannot be 1 until one minute *after* P(B has come) is 1,
+        // which is when x = headway + 1, so the above if will have returned 0;
+        var discount = (1 - pBHasCome) / (1 - cBoardB);
+
+        if (discount > 1 || discount < 0)
+          alert("Bad discount");
+
+        return pBComesSoonEnough * discount;
+      }
+
+      /** P(A arrives | A has not been boarded) = P(A arrives | A has not arrived) * P(A has not arrived | A has not been boarded) */
+      function pArr(headway, minutes, cBoard) {
+        if (minutes >= headway)
+          return 0;
+
+        var pArr = 1 / (headway - minutes);
+        var pHasCome = minutes / headway;
+        var discount = (1 - pHasCome) / (1 - cBoard);
+
+        return pArr * discount;
+      }
+
+      /* Add a new SVG graph to the DOM displaying the given data. */
+      function makeGraph(data, label) {
+
+        var margin = {
+            top: 20,
+            right: 20,
+            bottom: 30,
+            left: 40
+          },
+          width = 600 - margin.left - margin.right,
+          height = 150 - margin.top - margin.bottom;
+
+        // Map graph values to SVG (x,y) coordinates and colors
+        var x = d3.scale.ordinal()
+          .domain(d3.range(N))
+          .rangeRoundBands([0, width]);
+
+        var y = d3.scale.linear()
+          .domain([0, 1])
+          .range([height, 0]);
+        //var c = d3.scale.category10.domain(d3.range(3));
+
+        // Create a new SVG element in the DOM, which will hold the graph
+        var svg = d3.select("body").append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+          .append("g") // group element
+          .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        // Create X axis and add it to a group within the SVG
+
+        var xAxis = d3.svg.axis()
+          .scale(x)
+          .orient("bottom");
+
+        svg.append("g")
+          .attr("class", "x axis")
+          .attr("transform", "translate(0," + height + ")")
+          .call(xAxis)
+          .selectAll("text")
+          .style("text-anchor", "end")
+          .attr("dx", "-.8em")
+          .attr("dy", "-.55em")
+          .attr("transform", "rotate(-90)");
+
+        // Create Y axis and add it to a group within the SVG
+
+        var yAxis = d3.svg.axis()
+          .scale(y)
+          .orient("left")
+          .ticks(2);
+
+        svg.append("g")
+          .attr("class", "y axis")
+          .call(yAxis)
+          .append("text")
+          .attr("transform", "rotate(-90)")
+          .attr("y", 6)
+          .attr("dy", ".71em")
+          .style("text-anchor", "end");
+
+        // Popup "tooltip" to show the value of any given bar
+        var tip = d3.tip()
+          .attr('class', 'd3-tip')
+          .offset([-10, 0])
+          .html(function(d, i) {
+            return 't=' + i + ' p=' + d.toFixed(3);
+          });
+        // What does this do?
+        svg.call(tip);
+
+        // Bind the data, creating or updating one bar for each data point in the array
+
+        svg.selectAll(".bar")
+          .data(data)
+          .enter().append("rect")
+          .attr("class", "bar")
+          .attr("x", function(d, i) {
+            return x(i);
+          })
+          .attr("width", x.rangeBand())
+          .attr("y", function(d, i) {
+            return y(d);
+          })
+          .attr("height", function(d) {
+            return height - y(d);
+          })
+          .on('mouseover', tip.show)
+          .on('mouseout', tip.hide);
+
+        // add label
+        svg.append('text').text(label).attr('transform', 'translate(30, 10)');
+      }
+
+      function drawGraphs() {
+        d3.selectAll('svg').remove();
+
+        var headwayA = document.getElementById('headwayA').value;
+        var ttimeA = document.getElementById('ttimeA').value;
+        var headwayB = document.getElementById('headwayB').value;
+        var ttimeB = document.getElementById('ttimeB').value;
+        var headwayC = document.getElementById('headwayC').value;
+        var ttimeC = document.getElementById('ttimeC').value;
+
+        var busA = constantDistribution(headwayA);
+        var busB = constantDistribution(headwayB);
+        var busC = constantDistribution(headwayC);
+        var cBusA = cumulative(busA);
+        var cBusB = cumulative(busB);
+        var cBusC = cumulative(busC);
+
+        // P(A or B or C) = P((A or B) or C)
+        // P(A or B) = P(A) + P(B) - (P(A) * P(B))
+        var anyBusArrived = either(either(cBusA, cBusB), cBusC);
+        var noBusArrived = complement(anyBusArrived);
+
+        // Leave out the bus being examined from the cumulative part
+        //   cumulative versus density, any way to re-express this?
+        var boardedA = product(busA, complement(either(cBusB, cBusC)));
+        var boardedB = product(busB, complement(either(cBusA, cBusC)));
+        var boardedC = product(busC, complement(either(cBusA, cBusB)));
+
+        var cBoardedA = cumulative(boardedA);
+        var cBoardedB = cumulative(boardedB);
+        var cBoardedC = cumulative(boardedC);
+
+        var cBoardedAny = add(add(cBoardedA, cBoardedB), cBoardedC);
+
+        // Warning, cumulative(either()) != either(cumulative())
+        // we want prob that (A already happened) OR (B already happened)
+        // not prob that (A OR B) already happened... but what does this mean?
+        makeGraph(anyBusArrived, 'Any bus arrived');
+        makeGraph(noBusArrived, 'No bus arrived');
+
+        makeGraph(cBusA, 'Bus A arrived');
+        makeGraph(cBoardedA, 'Boarded bus A');
+        makeGraph(cBusB, 'Bus B arrived');
+        makeGraph(cBoardedB, 'Boarded bus B');
+        makeGraph(cBusC, 'Bus C arrived');
+        makeGraph(cBoardedC, 'Boarded bus C');
+
+        makeGraph(cBoardedAny, 'Boarded any bus');
+
+        // now the case of the clever traveler
+
+        var cvrBoardedA = [];
+        var cvrBoardedB = [];
+        var cvrBoardedC = [];
+
+        // cumulative probabilities that these routes have been boarded
+        var cPBrdA = 0;
+        var cPBrdB = 0;
+        var cPBrdC = 0;
+
+        for (var x = 0; x < N; x++) {
+          // probability A arrives at minute x
+          var pArrA = pArr(headwayA, x, cPBrdA);
+          var pArrB = pArr(headwayB, x, cPBrdB);
+          var pArrC = pArr(headwayC, x, cPBrdC);
+
+          // probability B is better than A
+          var pBBtrA = pBetter(headwayB, ttimeB, ttimeA, x, cPBrdB);
+          var pCBtrA = pBetter(headwayC, ttimeC, ttimeA, x, cPBrdC);
+
+          var pABtrB = pBetter(headwayA, ttimeA, ttimeB, x, cPBrdA);
+          var pCBtrB = pBetter(headwayC, ttimeC, ttimeB, x, cPBrdC);
+
+          var pABtrC = pBetter(headwayA, ttimeA, ttimeC, x, cPBrdA);
+          var pBBtrC = pBetter(headwayB, ttimeB, ttimeC, x, cPBrdB);
+
+          // only one direction of the comparison can have non-zero probability; let's be sure.
+          if (Math.min(pABtrB, pBBtrA) !== 0 ||
+            Math.min(pABtrC, pCBtrA) !== 0 ||
+            Math.min(pBBtrC, pCBtrB) !== 0)
+            alert("Both directions of a comparison had non-zero probability. This is a bug.")
+
+          if (pBBtrA > 1 || pCBtrA > 1 || pABtrB > 1 || pCBtrB > 1 || pABtrC > 1 || pBBtrC > 1 ||
+            pBBtrA < 0 || pCBtrA < 0 || pABtrB < 0 || pCBtrB < 0 || pABtrC < 0 || pBBtrC < 0)
+            alert("Impossible probability");
+
+          // both pBBtrA and pCBtrA depend on x, but they are independent conditional on X I believe, so I think this
+          // is the correct formula
+          // the cumulative probabilities are mutually exclusive, so adding them is the correct way to do an or
+          cvrBoardedA[x] = pArrA * (1 - or(pBBtrA, pCBtrA)) * (1 - (cPBrdA + cPBrdB + cPBrdC));
+          cvrBoardedB[x] = pArrB * (1 - or(pABtrB, pCBtrB)) * (1 - (cPBrdA + cPBrdB + cPBrdC));
+          cvrBoardedC[x] = pArrC * (1 - or(pABtrC, pBBtrC)) * (1 - (cPBrdA + cPBrdB + cPBrdC));
+
+          cPBrdA += cvrBoardedA[x];
+          cPBrdB += cvrBoardedB[x];
+          cPBrdC += cvrBoardedC[x];
         }
 
-        .axis {
-          font: 10px sans-serif;
-        }
+        var cCvrBoardedA = cumulative(cvrBoardedA);
+        var cCvrBoardedB = cumulative(cvrBoardedB);
+        var cCvrBoardedC = cumulative(cvrBoardedC);
 
-        .axis path,
-        .axis line {
-          fill: none;
-          stroke: #000;
-          shape-rendering: crispEdges;
-        }
+        var cCvrBoardedAny = add(add(cCvrBoardedA, cCvrBoardedB), cCvrBoardedC);
 
-        .x.axis path {
-          display: none;
-        }
+        makeGraph(cCvrBoardedA, "Clever passenger with perfect information boarded bus A");
+        makeGraph(cCvrBoardedB, "Clever passenger with perfect information boarded bus B");
+        makeGraph(cCvrBoardedC, "Clever passenger with perfect information boarded bus C");
 
-        .d3-tip {
-          line-height: 1;
-          font-weight: bold;
-          padding: 12px;
-          background: rgba(0, 0, 0, 0.8);
-          color: #fff;
-          border-radius: 2px;
-        }
+        makeGraph(cCvrBoardedAny, "Clever passenger with perfect information boarded any bus");
+      }
 
-        /* Creates a small triangle extender for the tooltip */
-        .d3-tip:after {
-          box-sizing: border-box;
-          display: inline;
-          font-size: 10px;
-          width: 100%;
-          line-height: 1;
-          color: rgba(0, 0, 0, 0.8);
-          content: "\25BC";
-          position: absolute;
-          text-align: center;
-        }
+      d3.selectAll('.control').on('change', drawGraphs);
 
-        svg text, body {
-          font-size: 10pt;
-          font-family: sans;
-        }
+      drawGraphs();
+    }()); // close namespace and call to execute.
 
-    </style>
+  </script>
+</body>
 
-    <body>
-        <div>
-          <label for="headwayA">Headway of bus A</label>
-          <input type="range" id="headwayA" min="1" max="60" value="30" class="control" />
-
-          <label for="ttimeA">Travel time of bus A</label>
-          <input type="range" id="ttimeA" min="1" max="60" value="30" class="control" />
-        </div>
-
-        <div>
-          <label for="headwayB">Headway of bus B</label>
-          <input type="range" id="headwayB" min="1" max="60" value="40" class="control" />
-
-          <label for="ttimeB">Travel time of bus B</label>
-          <input type="range" id="ttimeB" min="1" max="60" value="20" class="control" />
-        </div>
-
-        <div>
-          <label for="headwayC">Headway of bus C</label>
-          <input type="range" id="headwayC" min="1" max="60" value="50" class="control" />
-
-          <label for="ttimeC">Travel time of bus C</label>
-          <input type="range" id="ttimeC" min="1" max="60" value="25" class="control" />
-        </div>
-
-        <script type="text/javascript">
-
-        // create a context for the purpose of namespacing and applying strict syntax
-        (function () { 'use strict';
-
-            var N = 60; // number of bins in each histogram
-
-            function emptyDistribution() {
-                var ret = new Array(N);
-                for (var i = 0; i < N; i++) {
-                    ret[i] = 0;
-                }
-                return ret;
-            }
-
-            function constantDistribution (width) {
-                var ret = emptyDistribution();
-                for (var i = 0; i < width; i++) {
-                    ret[i] = 1/width;
-                }
-                return ret;
-            }
-
-            function cumulative (densities) {
-                var ret = new Array(N);
-                var accumulated = 0;
-                for (var i = 0; i < N; i++) {
-                    // definition of discrete cumulative probability is P(X<=x)
-                    // so add before setting. But this will either over or
-                    // underestimate (combining discrete & continuous problem)
-                    accumulated += densities[i];
-                    ret[i] = accumulated;
-                }
-                return ret;
-            }
-
-            function complement (distribution) {
-                var ret = new Array(N);
-                for (var i = 0; i < N; i++) {
-                    ret[i] = 1 - distribution[i];
-                }
-                return ret;
-            }
-
-            function or (p1, p2) {
-              return p1 + p2 - p1 * p2;
-            }
-
-            function either (p1, p2) {
-                var ret = new Array(N);
-                for (var i = 0; i < N; i++) {
-                    ret[i] = or(p1[i], p2[i]);
-                }
-                return ret;
-            }
-
-            function product (p1, p2) {
-                var ret = new Array(N);
-                for (var i = 0; i < N; i++) {
-                    ret[i] = p1[i] * p2[i];
-                }
-                return ret;
-            }
-
-            function add (p1, p2) {
-                var ret = new Array(N);
-                for (var i = 0; i < N; i++) ret[i] = p1[i] + p2[i];
-                return ret;
-            }
-
-            function subtract (p1, p2) {
-                var ret = new Array(N);
-                for (var i = 0; i < N; i++) ret[i] = p1[i] - p2[i];
-                return ret;
-            }
-
-            /* the probability that a route B with headway headway and a travel time ttimeB is better than a route with a
-               travel time ttimeA after waiting minutes minutes, given that route A is at the stop now */
-            function pBetter (headway, ttimeB, ttimeA, minutes, cBoardB) {
-              if (ttimeB >= ttimeA) {
-                // never better
-                return 0;
-              }
-
-              if (minutes >= headway)
-                return 0;
-
-              var pBComesSoonEnough = Math.min((ttimeA - ttimeB) / (headway - minutes), 1);
-
-              // the output of this function eventually gets multiplied with the probability that b has not
-              // been boarded, so we want P(B is better than A | B has not been boarded). But what we calculated
-              // above is P(B is better than A | B has not come), which is slightly larger. Discount it slightly,
-              // by P(B has not yet come | B has not yet been boarded), which is less than 1, because B might
-              // have come but was skipped.
-              // You can work out this factor with Bayes' theorem. The critical piece is that
-              // P(B has not yet been boarded | B has not yet come) = 1, because you can't board a bus that has not
-              // arrived . . .
-              var pBHasCome = minutes / headway;
-
-              if (cBoardB > pBHasCome)
-                alert("Higher probability of boarding vehicle than of vehicle coming; this is a bug");
-
-              // this cannot divide by zero, because cBoardB cannot be 1 until one minute *after* P(B has come) is 1,
-              // which is when x = headway + 1, so the above if will have returned 0;
-              var discount = (1 - pBHasCome) / (1 - cBoardB);
-
-              if (discount > 1 || discount < 0)
-                alert("Bad discount");
-
-              return pBComesSoonEnough * discount;
-            }
-
-            /** P(A arrives | A has not been boarded) = P(A arrives | A has not arrived) * P(A has not arrived | A has not been boarded) */
-            function pArr(headway, minutes, cBoard) {
-              if (minutes >= headway)
-                return 0;
-
-              var pArr = 1 / (headway - minutes);
-              var pHasCome = minutes / headway;
-              var discount = (1 - pHasCome) / (1 - cBoard);
-
-              return pArr * discount;
-            }
-
-            /* Add a new SVG graph to the DOM displaying the given data. */
-            function makeGraph (data, label) {
-
-                var margin = {top: 20, right: 20, bottom: 30, left: 40},
-                    width = 600 - margin.left - margin.right,
-                    height = 150 - margin.top - margin.bottom;
-
-                // Map graph values to SVG (x,y) coordinates and colors
-                var x = d3.scale.ordinal()
-                    .domain(d3.range(N))
-                    .rangeRoundBands([0, width]);
-
-                var y = d3.scale.linear()
-                    .domain([0,1])
-                    .range([height, 0]);
-                //var c = d3.scale.category10.domain(d3.range(3));
-
-                // Create a new SVG element in the DOM, which will hold the graph
-                var svg = d3.select("body").append("svg")
-                    .attr("width", width + margin.left + margin.right)
-                    .attr("height", height + margin.top + margin.bottom)
-                    .append("g") // group element
-                    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-
-                // Create X axis and add it to a group within the SVG
-
-                var xAxis = d3.svg.axis()
-                    .scale(x)
-                    .orient("bottom");
-
-                svg.append("g")
-                    .attr("class", "x axis")
-                    .attr("transform", "translate(0," + height + ")")
-                    .call(xAxis)
-                    .selectAll("text")
-                    .style("text-anchor", "end")
-                    .attr("dx", "-.8em")
-                    .attr("dy", "-.55em")
-                    .attr("transform", "rotate(-90)" );
-
-                // Create Y axis and add it to a group within the SVG
-
-                var yAxis = d3.svg.axis()
-                    .scale(y)
-                    .orient("left")
-                    .ticks(2);
-
-                svg.append("g")
-                    .attr("class", "y axis")
-                    .call(yAxis)
-                    .append("text")
-                    .attr("transform", "rotate(-90)")
-                    .attr("y", 6)
-                    .attr("dy", ".71em")
-                    .style("text-anchor", "end");
-
-                // Popup "tooltip" to show the value of any given bar
-                var tip = d3.tip()
-                    .attr('class', 'd3-tip')
-                    .offset([-10, 0])
-                    .html(function(d, i) { return 't=' + i + ' p=' + d.toFixed(3); });
-                // What does this do?
-                svg.call(tip);
-
-                // Bind the data, creating or updating one bar for each data point in the array
-
-                svg.selectAll(".bar")
-                    .data(data)
-                    .enter().append("rect")
-                    .attr("class", "bar")
-                    .attr("x", function(d, i) { return x(i); })
-                    .attr("width", x.rangeBand())
-                    .attr("y", function(d, i) { return y(d); })
-                    .attr("height", function(d) { return height - y(d); })
-                    .on('mouseover', tip.show)
-                    .on('mouseout', tip.hide);
-
-
-                // add label
-                svg.append('text').text(label).attr('transform', 'translate(30, 10)');
-            }
-
-            function drawGraphs () {
-              d3.selectAll('svg').remove();
-
-            var headwayA = document.getElementById('headwayA').value;
-            var ttimeA = document.getElementById('ttimeA').value;
-            var headwayB = document.getElementById('headwayB').value;
-            var ttimeB = document.getElementById('ttimeB').value;
-            var headwayC = document.getElementById('headwayC').value;
-            var ttimeC = document.getElementById('ttimeC').value;
-
-            var busA = constantDistribution(headwayA);
-            var busB = constantDistribution(headwayB);
-            var busC = constantDistribution(headwayC);
-            var cBusA = cumulative(busA);
-            var cBusB = cumulative(busB);
-            var cBusC = cumulative(busC);
-
-            // P(A or B or C) = P((A or B) or C)
-            // P(A or B) = P(A) + P(B) - (P(A) * P(B))
-            var anyBusArrived = either(either(cBusA, cBusB), cBusC);
-            var noBusArrived = complement(anyBusArrived);
-
-            // Leave out the bus being examined from the cumulative part
-            //   cumulative versus density, any way to re-express this?
-            var boardedA = product(busA, complement(either(cBusB, cBusC)));
-            var boardedB = product(busB, complement(either(cBusA, cBusC)));
-            var boardedC = product(busC, complement(either(cBusA, cBusB)));
-
-            var cBoardedA = cumulative (boardedA);
-            var cBoardedB = cumulative (boardedB);
-            var cBoardedC = cumulative (boardedC);
-
-            var cBoardedAny = add(add(cBoardedA, cBoardedB), cBoardedC);
-
-            // Warning, cumulative(either()) != either(cumulative())
-            // we want prob that (A already happened) OR (B already happened)
-            // not prob that (A OR B) already happened... but what does this mean?
-            makeGraph (anyBusArrived, 'Any bus arrived');
-            makeGraph (noBusArrived, 'No bus arrived');
-
-            makeGraph (cBusA, 'Bus A arrived');
-            makeGraph (cBoardedA, 'Boarded bus A');
-            makeGraph (cBusB, 'Bus B arrived');
-            makeGraph (cBoardedB, 'Boarded bus B');
-            makeGraph (cBusC, 'Bus C arrived');
-            makeGraph (cBoardedC, 'Boarded bus C');
-
-            makeGraph (cBoardedAny, 'Boarded any bus');
-
-            // now the case of the clever traveler
-
-            var cvrBoardedA = [];
-            var cvrBoardedB = [];
-            var cvrBoardedC = [];
-
-            // cumulative probabilities that these routes have been boarded
-            var cPBrdA = 0;
-            var cPBrdB = 0;
-            var cPBrdC = 0;
-
-            for (var x = 0; x < N; x++) {
-              // probability A arrives at minute x
-              var pArrA = pArr(headwayA, x, cPBrdA);
-              var pArrB = pArr(headwayB, x, cPBrdB);
-              var pArrC = pArr(headwayC, x, cPBrdC);
-
-              // probability B is better than A
-              var pBBtrA = pBetter(headwayB, ttimeB, ttimeA, x, cPBrdB);
-              var pCBtrA = pBetter(headwayC, ttimeC, ttimeA, x, cPBrdC);
-
-              var pABtrB = pBetter(headwayA, ttimeA, ttimeB, x, cPBrdA);
-              var pCBtrB = pBetter(headwayC, ttimeC, ttimeB, x, cPBrdC);
-
-              var pABtrC = pBetter(headwayA, ttimeA, ttimeC, x, cPBrdA);
-              var pBBtrC = pBetter(headwayB, ttimeB, ttimeC, x, cPBrdB);
-
-              // only one direction of the comparison can have non-zero probability; let's be sure.
-              if (Math.min(pABtrB, pBBtrA) !== 0 ||
-                  Math.min(pABtrC, pCBtrA) !== 0 ||
-                  Math.min(pBBtrC, pCBtrB) !== 0)
-                  alert("Both directions of a comparison had non-zero probability. This is a bug.")
-
-              if (pBBtrA > 1 || pCBtrA > 1 || pABtrB > 1 || pCBtrB > 1 || pABtrC > 1 || pBBtrC > 1 ||
-                    pBBtrA < 0 || pCBtrA < 0 || pABtrB < 0 || pCBtrB < 0 || pABtrC < 0 || pBBtrC < 0)
-                alert("Impossible probability");
-
-              // both pBBtrA and pCBtrA depend on x, but they are independent conditional on X I believe, so I think this
-              // is the correct formula
-              // the cumulative probabilities are mutually exclusive, so adding them is the correct way to do an or
-              cvrBoardedA[x] = pArrA * (1 - or(pBBtrA, pCBtrA)) * (1 - (cPBrdA + cPBrdB + cPBrdC));
-              cvrBoardedB[x] = pArrB * (1 - or(pABtrB, pCBtrB)) * (1 - (cPBrdA + cPBrdB + cPBrdC));
-              cvrBoardedC[x] = pArrC * (1 - or(pABtrC, pBBtrC)) * (1 - (cPBrdA + cPBrdB + cPBrdC));
-
-              cPBrdA += cvrBoardedA[x];
-              cPBrdB += cvrBoardedB[x];
-              cPBrdC += cvrBoardedC[x];
-            }
-
-            var cCvrBoardedA = cumulative(cvrBoardedA);
-            var cCvrBoardedB = cumulative(cvrBoardedB);
-            var cCvrBoardedC = cumulative(cvrBoardedC);
-
-            var cCvrBoardedAny = add(add(cCvrBoardedA, cCvrBoardedB), cCvrBoardedC);
-
-            makeGraph(cCvrBoardedA, "Clever passenger with perfect information boarded bus A");
-            makeGraph(cCvrBoardedB, "Clever passenger with perfect information boarded bus B");
-            makeGraph(cCvrBoardedC, "Clever passenger with perfect information boarded bus C");
-
-            makeGraph(cCvrBoardedAny, "Clever passenger with perfect information boarded any bus");
-          }
-
-          d3.selectAll('.control').on('change', drawGraphs);
-
-          drawGraphs();
-        }()); // close namespace and call to execute.
-
-        </script>
-    </body>
 </html>
