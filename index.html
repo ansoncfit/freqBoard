@@ -55,7 +55,7 @@
           text-align: center;
         }
 
-        svg text {
+        svg text, body {
           font-size: 10pt;
           font-family: sans;
         }
@@ -63,6 +63,30 @@
     </style>
 
     <body>
+        <div>
+          <label for="headwayA">Headway of bus A</label>
+          <input type="range" id="headwayA" min="1" max="60" value="30" class="control" />
+
+          <label for="ttimeA">Travel time of bus A</label>
+          <input type="range" id="ttimeA" min="1" max="60" value="30" class="control" />
+        </div>
+
+        <div>
+          <label for="headwayB">Headway of bus B</label>
+          <input type="range" id="headwayB" min="1" max="60" value="40" class="control" />
+
+          <label for="ttimeB">Travel time of bus B</label>
+          <input type="range" id="ttimeB" min="1" max="60" value="20" class="control" />
+        </div>
+
+        <div>
+          <label for="headwayC">Headway of bus C</label>
+          <input type="range" id="headwayC" min="1" max="60" value="50" class="control" />
+
+          <label for="ttimeC">Travel time of bus C</label>
+          <input type="range" id="ttimeC" min="1" max="60" value="25" class="control" />
+        </div>
+
         <script type="text/javascript">
 
         // create a context for the purpose of namespacing and applying strict syntax
@@ -211,10 +235,6 @@
                     .append("g") // group element
                     .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-
-                // add label
-                svg.append('text').text(label).attr('transform', 'translate(30, 10)');
-
                 // Create X axis and add it to a group within the SVG
 
                 var xAxis = d3.svg.axis()
@@ -267,15 +287,21 @@
                     .attr("height", function(d) { return height - y(d); })
                     .on('mouseover', tip.show)
                     .on('mouseout', tip.hide);
+
+
+                // add label
+                svg.append('text').text(label).attr('transform', 'translate(30, 10)');
             }
 
-            // TODO: control with sliders, redraw graphs
-            var headwayA = 30;
-            var ttimeA = 30;
-            var headwayB = 40;
-            var ttimeB = 20;
-            var headwayC = 50;
-            var ttimeC = 25;
+            function drawGraphs () {
+              d3.selectAll('svg').remove();
+
+            var headwayA = document.getElementById('headwayA').value;
+            var ttimeA = document.getElementById('ttimeA').value;
+            var headwayB = document.getElementById('headwayB').value;
+            var ttimeB = document.getElementById('ttimeB').value;
+            var headwayC = document.getElementById('headwayC').value;
+            var ttimeC = document.getElementById('ttimeC').value;
 
             var busA = constantDistribution(headwayA);
             var busB = constantDistribution(headwayB);
@@ -376,6 +402,11 @@
             makeGraph(cCvrBoardedC, "Clever passenger with perfect information boarded bus C");
 
             makeGraph(cCvrBoardedAny, "Clever passenger with perfect information boarded any bus");
+          }
+
+          d3.selectAll('.control').on('change', drawGraphs);
+
+          drawGraphs();
         }()); // close namespace and call to execute.
 
         </script>
