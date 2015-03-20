@@ -196,6 +196,18 @@
         return trimRight(elapsedTime);
       }
 
+      /** P(A arrives | A has not been boarded) = P(A arrives | A has not arrived) * P(A has not arrived | A has not been boarded) */
+      function pArr(headway, minutes, cBoard) {
+        if (minutes >= headway)
+          return 0;
+
+          var pArr = 1 / (headway - minutes);
+          var pHasCome = minutes / headway;
+          var discount = (1 - pHasCome) / (1 - cBoard);
+
+          return pArr * discount;
+        }
+
       /* Add a new SVG graph to the DOM displaying the given data. */
       function makeGraph(data, label, max) {
 
@@ -373,7 +385,62 @@
         makeGraph(cbAny, "Clever passenger with perfect information boarded any bus, simple algorithm", 1);
 
         var destElapsed = elapsed(bDestA, ttimeA, bDestB, ttimeB, bDestC, ttimeC);
-        makeGraph(destElapsed, "Elapsed time distribution for the clever traveler with perfect information, simple algorithm")
+        makeGraph(destElapsed, "Elapsed time distribution for the clever traveler with perfect information, simple algorithm");
+
+        // now the case of the minimum upper bound
+        var acBoardedA = 0;
+        var acBoardedB = 0;
+        var acBoardedC = 0;
+
+        var mBoardedA = [];
+        var mBoardedB = [];
+        var mBoardedC = [];
+
+        for (var x = 0; x < N; x++) {
+          var BBetterA = (Math.max(headwayB - x, 0) + ttimeB < ttimeA) * Math.max(1 - x / headwayB, 0) / (1 - acBoardedB);
+          var CBetterA = (Math.max(headwayC - x, 0) + ttimeC < ttimeA) * Math.max(1 - x / headwayC, 0) / (1 - acBoardedC);
+
+          var anyBetterA = BBetterA + CBetterA - BBetterA * CBetterA;
+
+          mBoardedA[x] = pArr(headwayA, x, acBoardedA) * (1 - anyBetterA) * (1 - (acBoardedA + acBoardedB + acBoardedC));
+
+          var ABetterB = (Math.max(headwayA - x, 0) + ttimeA < ttimeB) * Math.max(1 - x / headwayA, 0) / (1 - acBoardedA);
+          var CBetterB = (Math.max(headwayC - x, 0) + ttimeC < ttimeB) * Math.max(1 - x / headwayC, 0) / (1 - acBoardedC);
+
+          var anyBetterB = ABetterB + CBetterB - ABetterB * CBetterB;
+
+          mBoardedB[x] = pArr(headwayB, x, acBoardedB) * (1 - anyBetterB) * (1 - (acBoardedA + acBoardedB + acBoardedC));
+
+          var ABetterC = (Math.max(headwayA - x, 0) + ttimeA < ttimeC) * Math.max(1 - x / headwayA, 0) / (1 - acBoardedA);
+          var BBetterC = (Math.max(headwayB - x, 0) + ttimeB < ttimeC) * Math.max(1 - x / headwayB, 0) / (1 - acBoardedB);
+
+          var anyBetterC = ABetterC + BBetterC - ABetterC * BBetterC;
+
+          mBoardedC[x] = pArr(headwayC, x, acBoardedC) * (1 - anyBetterC) * (1 - (acBoardedA + acBoardedB + acBoardedC));
+
+          acBoardedA += mBoardedA[x];
+          acBoardedB += mBoardedB[x];
+          acBoardedC += mBoardedC[x];
+
+          console.log(x, anyBetterA, anyBetterB, anyBetterC);
+
+          console.log(acBoardedA + acBoardedB + acBoardedC)
+
+          if (anyBetterA > 1 || anyBetterB > 1 || anyBetterC > 1 ||
+              anyBetterA < 0 || anyBetterB < 0 || anyBetterC < 0 ||
+              (acBoardedA + acBoardedB + acBoardedC) > 1)
+            console.log("invalid probability");
+        }
+
+        var mBoardedAny = add(mBoardedA, add(mBoardedB, mBoardedC));
+
+        makeGraph(cumulative(mBoardedA), 'Probability that risk-averse traveler boarded A', 1);
+        makeGraph(cumulative(mBoardedB), 'Probability that risk-averse traveler boarded B', 1);
+        makeGraph(cumulative(mBoardedC), 'Probability that risk-averse traveler boarded C', 1);
+        makeGraph(cumulative(mBoardedAny), 'Probability that risk-averse traveler boarded any', 1);
+
+        var mElapsed = elapsed(mBoardedA, ttimeA, mBoardedB, ttimeB, mBoardedC, ttimeC);
+        makeGraph(mElapsed, 'Elapsed time distribution for risk averse traveler');
       }
 
       d3.selectAll('.control').on('change', drawGraphs);
